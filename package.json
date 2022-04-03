@@ -1,0 +1,12 @@
+{
+    "private": true,
+    "name": "songkick-calendar",
+    "version": "1.0.0",
+    "description": "Filter your songkick attendance calendar by type (interested/going)",
+    "main": "index.js",
+    "author": "jayme",
+    "license": "MIT",
+    "dependencies": {
+        "ical.js": "1.5.0"
+    }
+}
