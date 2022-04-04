@@ -23,9 +23,9 @@ async function handleRequest(request) {
   }
 
   const url = new URL(request.url)
-  let params = url.pathname.split('/')
+  const params = url.pathname.split('/')
   if (params.length != 3 || !(params[2] === 'going.ics' || params[2] === 'interested.ics')) {
-    const statusText = 'Badly formatted request, must be /username/[going|interested].ics'
+    const statusText = 'Badly formatted request, path must be /username/[going|interested].ics'
     return new Response(statusText, {
       status: 400,
       statusText: statusText
@@ -71,21 +71,20 @@ async function buildCalendar(text, calendarType, songkickUser) {
   // create a new calendar as output
   const newvcal = new ICAL.Component(['vcalendar', [], []])
   newvcal.updatePropertyWithValue('prodid', '-//Improved Songkick Calendar//iCal 1.0/EN')
-  newvcal.updatePropertyWithValue('x-wr-calname', 'Songkick: Events ' + songkickUser + ' goes to')
+  const descriptionSuffix = calendarType === 'going.ics' ? ' goes to' : ' is interested in'
+  newvcal.updatePropertyWithValue('x-wr-calname', 'Songkick: Events ' + songkickUser + descriptionSuffix)
   if (publishedTTL) {
     newvcal.updatePropertyWithValue('x-published-ttl', publishedTTL)
   }
 
-  vevents.forEach(filterType)
-  function filterType(vevent) {
-    const description = vevent.getFirstPropertyValue('description')
+  vevents.forEach(function (vevent) {
     //check if the event description contains the identifier
-    const isGoingToEvent = description.startsWith(goingToDescription)
+    const isGoingToEvent = vevent.getFirstPropertyValue('description').startsWith(goingToDescription)
     if ((calendarType === 'interested.ics' && !isGoingToEvent) || (calendarType === 'going.ics' && isGoingToEvent)) {
       // Copy the event to the output calendar
       newvcal.addSubcomponent(vevent)
     }
-  }
+  })
   return newvcal.toString()
 }
 
