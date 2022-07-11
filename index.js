@@ -64,7 +64,7 @@ async function buildCalendar(text, user) {
   const newvcal = new ICAL.Component(['vcalendar', [], []])
 
   // copy all properties
-  vcomp.getAllProperties().forEach(function (property) {
+  Array.from(vcomp.getAllProperties()).forEach(function (property) {
     newvcal.addProperty(property)
   })
   // ensure prodid and calname are updated
@@ -72,10 +72,14 @@ async function buildCalendar(text, user) {
   newvcal.updatePropertyWithValue('x-wr-calname', 'SRE:OnCall for ' + user)
 
   // Filter only vevent's, copy all other subcomponents as they are
-  vcomp.getAllSubcomponents().forEach(function (subComp) {
-    if (subComp.name === 'vevent' && subComp.getFirstPropertyValue('summary').includes('Batphone')) {
-      // Don't include events from Batphone rotation
-      return
+  Array.from(vcomp.getAllSubcomponents()).forEach(function (subComp) {
+    if (subComp.name === 'vevent') {
+      const summary = subComp.getFirstPropertyValue('summary')
+      if (summary.includes('Batphone')) {
+        // Don't include events from Batphone rotation
+        return
+      }
+      subComp.updatePropertyWithValue('summary', 'OnCall -' + summary.split('-')[1])
     }
     newvcal.addSubcomponent(subComp)
   })
