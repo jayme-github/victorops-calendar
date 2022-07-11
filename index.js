@@ -1,10 +1,7 @@
 const ICAL = require('ical.js')
 
-// String that is used to identify "Going to" events
-const goingToDescription = 'You’re going'
-
-async function getSongkickCalendarUrl(username) {
-  return 'https://www.songkick.com/users/' + username + '/calendars.ics?filter=attendance'
+async function getCalendarUrl(org, username, token) {
+  return 'https://portal.victorops.com/api/v1/org/' + org + '/user/' + username + '/calendar/' + token
 }
 
 /**
@@ -24,37 +21,34 @@ async function handleRequest(request) {
 
   const url = new URL(request.url)
   const params = url.pathname.split('/')
-  if (params.length != 3 || !(params[2] === 'going.ics' || params[2] === 'interested.ics')) {
-    const statusText = 'Badly formatted request, path must be /username/[going|interested].ics'
+  if (params.length != 4 || !params[3].endsWith('.ics')) {
+    const statusText = 'Badly formatted request, path must be /org/username/token.ics'
     return new Response(statusText, {
       status: 400,
       statusText: statusText
     })
   }
 
-  const songkickUser = params[1]
-  const calendarType = params[2]
-  const calendarUrl = await getSongkickCalendarUrl(songkickUser)
+  const org = params[1]
+  const user = params[2]
+  const token = params[3]
+  const calendarUrl = await getCalendarUrl(org, user, token)
   try {
-    const songkickResponse = await fetch(calendarUrl)
-    if (songkickResponse.status != 200) {
+    const response = await fetch(calendarUrl)
+    if (response.status != 200) {
       // Return whatever status songkick returned
-      return new Response('Error from Songkick', { status: songkickResponse.status })
+      return new Response('Error from VictorOps', { status: response.status })
     }
-    var calendarText = await songkickResponse.text()
-    // Songkick returns DTSTART/DTEND with type DATE but does not say so.
-    // ical.js then fails to parse date-time from those fields, creating broken iCal
-    calendarText = calendarText.replace(/^(DT(?:START|END)):(\d{8})$/gm, '$1;VALUE=DATE:$2')
-
-    var songkickCacheControl = songkickResponse.headers.get('cache-control')
+    var calendarText = await response.text()
+    var cacheControl = response.headers.get('cache-control')
   } catch (exception) {
-    return new Response('', { status: 500, statusText: 'Error fetching calendar from Songkick' })
+    return new Response('', { status: 500, statusText: 'Error fetching calendar from VictorOps' })
   }
 
-  const newCalendar = await buildCalendar(calendarText, calendarType, songkickUser)
+  const newCalendar = await buildCalendar(calendarText, user)
   const headers = {
     'content-type': 'text/calendar; charset=UTF-8',
-    'cache-control': songkickCacheControl ? songkickCacheControl : 'no-store, no-cache, must-revalidate'
+    'cache-control': cacheControl ? cacheControl : 'no-store, no-cache, must-revalidate'
   }
   return new Response(newCalendar, {
     status: 200,
@@ -62,29 +56,30 @@ async function handleRequest(request) {
   })
 }
 
-async function buildCalendar(text, calendarType, songkickUser) {
+async function buildCalendar(text, user) {
   const jcalData = ICAL.parse(text)
   const vcomp = new ICAL.Component(jcalData)
-  const vevents = vcomp.getAllSubcomponents('vevent')
-  const publishedTTL = vcomp.getFirstPropertyValue('x-published-ttl')
 
   // create a new calendar as output
   const newvcal = new ICAL.Component(['vcalendar', [], []])
-  newvcal.updatePropertyWithValue('prodid', '-//Improved Songkick Calendar//iCal 1.0/EN')
-  const descriptionSuffix = calendarType === 'going.ics' ? ' goes to' : ' is interested in'
-  newvcal.updatePropertyWithValue('x-wr-calname', 'Songkick: Events ' + songkickUser + descriptionSuffix)
-  if (publishedTTL) {
-    newvcal.updatePropertyWithValue('x-published-ttl', publishedTTL)
-  }
 
-  vevents.forEach(function (vevent) {
-    //check if the event description contains the identifier
-    const isGoingToEvent = vevent.getFirstPropertyValue('description').startsWith(goingToDescription)
-    if ((calendarType === 'interested.ics' && !isGoingToEvent) || (calendarType === 'going.ics' && isGoingToEvent)) {
-      // Copy the event to the output calendar
-      newvcal.addSubcomponent(vevent)
-    }
+  // copy all properties
+  vcomp.getAllProperties().forEach(function (property) {
+    newvcal.addProperty(property)
   })
+  // ensure prodid and calname are updated
+  newvcal.updatePropertyWithValue('prodid', '-//Improved VictorOps Calendar//EN')
+  newvcal.updatePropertyWithValue('x-wr-calname', 'SRE:OnCall for ' + user)
+
+  // Filter only vevent's, copy all other subcomponents as they are
+  vcomp.getAllSubcomponents().forEach(function (subComp) {
+    if (subComp.name === 'vevent' && subComp.getFirstPropertyValue('summary').includes('Batphone')) {
+      // Don't include events from Batphone rotation
+      return
+    }
+    newvcal.addSubcomponent(subComp)
+  })
+
   return newvcal.toString()
 }
 
