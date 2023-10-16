@@ -75,8 +75,8 @@ async function buildCalendar(text, user) {
   Array.from(vcomp.getAllSubcomponents()).forEach(function (subComp) {
     if (subComp.name === 'vevent') {
       const summary = subComp.getFirstPropertyValue('summary')
-      if (summary.includes('Batphone')) {
-        // Don't include events from Batphone rotation
+      if (summary.includes('Batphone') || summary.includes('(Escalation)')) {
+        // Don't include events from Batphone rotation and Escalation (leading to duplicates)
         return
       }
       subComp.updatePropertyWithValue('summary', 'OnCall -' + summary.split('-')[1])
